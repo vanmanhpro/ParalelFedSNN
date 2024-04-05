@@ -32,7 +32,7 @@ import time
 
 from PIL import Image
 
-def checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list, ms_model_deviation):
+def checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list):
     # Write metric store into a CSV
     metrics_df = pd.DataFrame(
         {
@@ -51,9 +51,6 @@ def checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_
 
     torch.save(w_glob, f"./{args.result_dir}/saved_model{fn_suffix}")
 
-    with open(f"./{args.result_dir}/model_deviation{fn_suffix}", 'w') as f:
-        json.dump(ms_model_deviation, f)
-
 def load_checkpoint_if_exists(args):
     fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}'.format(
                                             args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
@@ -61,7 +58,7 @@ def load_checkpoint_if_exists(args):
                                             args.grad_rltv_noise_stdev,)
     
     if not os.path.exists(f"./{args.result_dir}/saved_model{fn_suffix}"):
-        return None, None, None, None, None, None
+        return None, None, None, None, None
     
     metrics_df = pd.read_csv(f"./{args.result_dir}/fed_stats{fn_suffix}.csv", sep='\t')
 
@@ -71,10 +68,8 @@ def load_checkpoint_if_exists(args):
     ms_loss_test_list = metrics_df['Test loss'].tolist()
 
     w_glob = torch.load(f"./{args.result_dir}/saved_model{fn_suffix}")
-    with open(f"./{args.result_dir}/model_deviation{fn_suffix}", 'r') as f:
-        ms_model_deviation = json.load(f)
 
-    return w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list, ms_model_deviation
+    return w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list
 
 
 if __name__ == '__main__':
@@ -131,16 +126,16 @@ if __name__ == '__main__':
         exit('Error: unrecognized model')
     print(net_glob)
 
-    a1, a2, a3, a4, a5, a6 = load_checkpoint_if_exists(args)
+    a1, a2, a3, a4, a5 = load_checkpoint_if_exists(args)
 
 
     if a1 is not None:
-        print(f"Checkpoint exists! Epoch: {len(a6)}")
+        print(f"Checkpoint exists! Epoch: {len(a2)}")
         net_glob.load_state_dict(a1)
-        ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list, ms_model_deviation = a2, a3, a4, a5, a6
+        ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list = a2, a3, a4, a5
     else:
         # metrics to store
-        ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list, ms_model_deviation = [], [], [], [], []
+        ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list = [], [], [], []
 
     # Define LR Schedule
     values = args.lr_interval.split()
@@ -151,7 +146,7 @@ if __name__ == '__main__':
     # Define Fed Learn object
     fl = FedLearn(args)
 
-    iter = len(ms_model_deviation)
+    iter = len(ms_acc_train_list)
     for i in range(iter):
         if i in lr_interval:
             args.lr = args.lr/args.lr_reduce
@@ -181,8 +176,6 @@ if __name__ == '__main__':
                 w_locals_selected.append(copy.deepcopy(w))
                 loss_locals_selected.append(copy.deepcopy(loss))
         
-        model_dev_list = model_deviation(w_locals_all, net_glob.state_dict())
-        ms_model_deviation.append(model_dev_list)
         # update global weights
         w_glob = fl.FedAvg(w_locals_selected)
         
@@ -209,7 +202,7 @@ if __name__ == '__main__':
         ms_loss_test_list.append(loss_test)
 
         if iter % args.checkpoint_every == 0:
-            checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list, ms_model_deviation)
+            checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list)
 
         if iter in lr_interval:
             args.lr = args.lr/args.lr_reduce

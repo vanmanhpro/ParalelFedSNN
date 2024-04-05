@@ -2,11 +2,30 @@ python main_fed.py --snn --dataset CIFAR10 --num_classes 10 --model VGG9 --optim
 
 
 
-python3 main_fed.py --snn --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.1 --lr_reduce 10 --epochs 40 --local_ep 5 --eval_every 1 --num_users 5 --frac 1 --iid --gpu 0 --timesteps 25 --straggler_prob 0.0 --grad_noise_stdev 0.0 --result_dir test --verbose
+# SNN tests
+python3 main_fed.py --snn --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.1 --lr_reduce 1 --momentum 0.95 --epochs 40 --local_ep 5 --num_users 5 --checkpoint_every 1 --frac 1 --iid --gpu 0 --timesteps 25 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.0 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --snn --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.1 --lr_reduce 1 --momentum 0.95 --epochs 40 --local_ep 5 --num_users 5 --checkpoint_every 1 --frac 1 --iid --gpu 1 --timesteps 25 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.01 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --snn --dataset CIFAR100 --num_classes 100 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.1 --lr_reduce 1 --momentum 0.95 --epochs 40 --local_ep 5 --num_users 5 --checkpoint_every 1 --frac 1 --iid --gpu 4 --timesteps 25 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.0 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --snn --dataset CIFAR100 --num_classes 100 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.1 --lr_reduce 1 --momentum 0.95 --epochs 40 --local_ep 5 --num_users 5 --checkpoint_every 1 --frac 1 --iid --gpu 5 --timesteps 25 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.01 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+# ANN tests
+python3 main_fed.py --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 2 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.0 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 3 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.01 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 6 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.02 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 7 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.03 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
 
 
-python3 main_fed.py --dataset CIFAR10 --num_classes 10 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 10 --weight_decay 5e-4 --epochs 40 --local_ep 5 --eval_every 1 --num_users 5 --frac 1 --iid --gpu 0 --straggler_prob 0.0 --grad_noise_stdev 0.0 --result_dir test
+# Not running 
 
+python3 main_fed.py --dataset CIFAR100 --num_classes 100 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 6 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.02 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
+
+python3 main_fed.py --dataset CIFAR100 --num_classes 100 --model VGG9 --optimizer SGD --bs 32 --local_bs 32 --lr_interval '0.5 0.75' --lr 0.001 --lr_reduce 1 --weight_decay 5e-4 --epochs 40 --local_ep 5 --checkpoint_every 1 --num_users 5 --frac 1 --iid --gpu 7 --grad_noise_stdev 0.0 --grad_abs_noise_stdev 0.03 --grad_rltv_noise_stdev 0.0 --result_dir test --verbose
 
 
 # Debug
