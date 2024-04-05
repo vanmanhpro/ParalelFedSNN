@@ -235,7 +235,7 @@ if __name__ == '__main__':
         for idx in idxs_users:
             if args.verbose:
                 print(f"Training client {idx}")
-            clients[idx].spawn_new_local_training(copy.deepcopy(w_glob))
+            clients[idx].spawn_new_local_training(w_glob)
         
         for idx in idxs_users:
             clients[idx].local_traing_process.join()
