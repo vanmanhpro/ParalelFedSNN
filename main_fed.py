@@ -42,20 +42,22 @@ def checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_
             'Test loss': ms_loss_test_list
         })
 
-    fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}'.format(
+    fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
                                             args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
                                             args.grad_abs_noise_stdev,
-                                            args.grad_rltv_noise_stdev,)
+                                            args.grad_rltv_noise_stdev,
+                                            args.params_compress_rate,)
 
     metrics_df.to_csv(f"./{args.result_dir}/fed_stats{fn_suffix}.csv", sep='\t')
 
     torch.save(w_glob, f"./{args.result_dir}/saved_model{fn_suffix}")
 
 def load_checkpoint_if_exists(args):
-    fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}'.format(
+    fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
                                             args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
                                             args.grad_abs_noise_stdev,
-                                            args.grad_rltv_noise_stdev,)
+                                            args.grad_rltv_noise_stdev,
+                                            args.params_compress_rate,)
     
     if not os.path.exists(f"./{args.result_dir}/saved_model{fn_suffix}"):
         return None, None, None, None, None
@@ -136,12 +138,6 @@ if __name__ == '__main__':
     else:
         # metrics to store
         ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list = [], [], [], []
-
-    # Define LR Schedule
-    values = args.lr_interval.split()
-    lr_interval = []
-    for value in values:
-        lr_interval.append(int(float(value)*args.epochs))
 
     # Define Fed Learn object
     fl = FedLearn(args)
