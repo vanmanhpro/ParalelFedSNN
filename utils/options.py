@@ -61,6 +61,7 @@ def args_parser():
     parser.add_argument('--grad_noise_stdev', type=float, default=0.0, help="Noise level for gradients")
     parser.add_argument('--grad_abs_noise_stdev', type=float, default=0.0, help="Absolute noise level for gradients")
     parser.add_argument('--grad_rltv_noise_stdev', type=float, default=0.0, help="Relative noise level for gradients")
+    parser.add_argument('--params_compress_rate', type=float, default=1.0, help="Relative noise level for gradients")
     parser.add_argument('--dvs', action='store_true', help="Whether the input data is DVS")
     parser.add_argument('--modality', type=str, default='aps', help="aps or dvs for the type of data to work on DDD20")
     args = parser.parse_args()

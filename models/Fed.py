@@ -7,6 +7,7 @@ import torch
 import random
 from torch import nn
 from typing import Union
+import numpy as np
 
 def percentile(t: torch.tensor, q: float) -> Union[int, float]:
     """
@@ -56,6 +57,18 @@ class FedLearn(object):
             for k in w.keys():
                 w[k] = w[k].cpu() + torch.randn(w[k].size()) * torch.mean(torch.abs(w[k])) * self.args.grad_rltv_noise_stdev
         
+        return w
+    
+    def CompressParams(self, w):
+        if self.args.params_compress_rate < 1.0:
+            w_flat = np.concatenate([w[k].flatten().cpu() for k in w.keys()])
+            if self.args.params_compress_rate > 0:
+                threshold = np.quantile(np.abs(w_flat), 1 - self.args.params_compress_rate)
+            else:
+                threshold = np.inf
+            for k in w.keys():
+                w[k][torch.abs(w[k]) < threshold] = 0
+
         return w
     
     def FedAvg(self, w):

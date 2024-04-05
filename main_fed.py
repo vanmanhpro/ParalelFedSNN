@@ -147,9 +147,6 @@ if __name__ == '__main__':
     fl = FedLearn(args)
 
     iter = len(ms_acc_train_list)
-    for i in range(iter):
-        if i in lr_interval:
-            args.lr = args.lr/args.lr_reduce
     while iter < args.epochs:
         net_glob.train()
         w_locals_selected, loss_locals_selected = [], []
@@ -160,6 +157,7 @@ if __name__ == '__main__':
         w_glob = copy.deepcopy(net_glob.state_dict())
         w_glob = fl.AddNoiseAbs(w_glob)
         w_glob = fl.AddNoiseRltv(w_glob)
+        w_glob = fl.CompressParams(w_glob)
 
         for idx in idxs_users:
             if args.verbose:
@@ -170,6 +168,7 @@ if __name__ == '__main__':
             w, loss = local.train(net=model_copy.to(args.device))
             w = fl.AddNoiseAbs(w)
             w = fl.AddNoiseRltv(w)
+            w = fl.CompressParams(w)
             w_locals_all.append(copy.deepcopy(w))
             loss_locals_all.append(copy.deepcopy(loss))
             if idx in idxs_users:
@@ -203,9 +202,6 @@ if __name__ == '__main__':
 
         if iter % args.checkpoint_every == 0:
             checkpoint(args, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list)
-
-        if iter in lr_interval:
-            args.lr = args.lr/args.lr_reduce
 
         iter += 1
 
