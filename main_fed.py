@@ -146,7 +146,6 @@ if __name__ == '__main__':
     while iter < args.epochs:
         net_glob.train()
         w_locals_selected, loss_locals_selected = [], []
-        w_locals_all, loss_locals_all = [], []
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         print("Selected clients:", idxs_users)
@@ -165,11 +164,9 @@ if __name__ == '__main__':
             w = fl.AddNoiseAbs(w)
             w = fl.AddNoiseRltv(w)
             w = fl.CompressParams(w)
-            w_locals_all.append(copy.deepcopy(w))
-            loss_locals_all.append(copy.deepcopy(loss))
-            if idx in idxs_users:
-                w_locals_selected.append(copy.deepcopy(w))
-                loss_locals_selected.append(copy.deepcopy(loss))
+
+            w_locals_selected.append(copy.deepcopy(w))
+            loss_locals_selected.append(copy.deepcopy(loss))
         
         # update global weights
         w_glob = fl.FedAvg(w_locals_selected)
