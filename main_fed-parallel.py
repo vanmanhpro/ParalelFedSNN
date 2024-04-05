@@ -12,6 +12,7 @@ from pathlib import Path
 from torchvision import datasets, transforms
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, Subset
 
 from utils.sampling import mnist_iid, mnist_noniid, cifar_iid, cifar_non_iid, mnist_dvs_iid, mnist_dvs_non_iid, nmnist_iid, nmnist_non_iid
 from utils.options import args_parser
@@ -22,6 +23,7 @@ from models.test import test_img
 import models.vgg as ann_models
 import models.resnet as resnet_models
 import models.vgg_spiking_bntt as snn_models_bntt
+
 
 import os
 import tables
@@ -90,24 +92,52 @@ class Client:
         self.dataset_train = dataset_train
         self.train_idxs = train_idxs
 
-        if not os.path.exists(f"miscellaneous/database{self.db_postfix}"):
-            os.mkdir(f"miscellaneous/database{self.db_postfix}")
         
         self.result_cache_path = f"miscellaneous/database{self.db_postfix}/local_result_{self.node_id}.pkl"
 
     
-    def fit(self, w_glob):
+    def fit(self):
         while True:
             try:
-                local = LocalUpdate(args=self.args, dataset=self.dataset_train, idxs=self.train_idxs) # idxs needs the list of indices assigned to this particular client
-                model_copy = self.net_class(**self.model_args) # get a new instance
-                model_copy.load_state_dict(w_glob) # copy weights and stuff
-                w, loss = local.train(net=model_copy.to(self.args.device))
+                with open(f"miscellaneous/database{self.db_postfix}/data.pkl", 'rb') as file:
+                    trainsets = pickle.load(file)
+                ldr_train = DataLoader(trainsets[self.node_id], batch_size=self.args.local_bs, shuffle=True, drop_last=True)
+                
+                w_glob = torch.load(f"miscellaneous/database{self.db_postfix}/w_glob.pkl")
+
+                net = self.net_class(**self.model_args).to(self.args.device)
+                net.load_state_dict(w_glob)
+                # Load Data
+                net.train()
+                # train and update
+                loss_func = nn.CrossEntropyLoss()
+                if self.args.optimizer == "SGD":
+                    optimizer = torch.optim.SGD(net.parameters(), lr=self.args.lr, momentum=self.args.momentum, weight_decay = self.args.weight_decay)
+                elif self.args.optimizer == "Adam":
+                    optimizer = torch.optim.Adam(net.parameters(), lr = self.args.lr, weight_decay = self.args.weight_decay, amsgrad = True)
+                else:
+                    print("Invalid optimizer")
+                epoch_loss = []
+                for iter in range(self.args.local_ep):
+                    batch_loss = []
+                    for batch_idx, (images, labels) in enumerate(ldr_train):
+                        images, labels = images.to(self.args.device), labels.to(self.args.device)
+                        net.zero_grad()
+                        log_probs = net(images)
+                        loss = loss_func(log_probs, labels)
+                        loss.backward()
+                        optimizer.step()
+                        if self.args.verbose and batch_idx % 10 == 0:
+                            print('Update Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                                iter, batch_idx * len(images), len(ldr_train.dataset),
+                                    100. * batch_idx / len(ldr_train), loss.item()))
+                        batch_loss.append(loss.item())
+                    epoch_loss.append(sum(batch_loss)/len(batch_loss))
+                
 
                 with open(self.result_cache_path, 'wb') as file:
-                    pickle.dump((w, loss), file)
+                    pickle.dump((net.state_dict(), sum(epoch_loss) / len(epoch_loss)), file)
 
-                del w, loss
 
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
@@ -123,10 +153,10 @@ class Client:
         if os.path.exists(self.result_cache_path):
             os.remove(self.result_cache_path)
 
-    def spawn_new_local_training(self, w_glob):
+    def spawn_new_local_training(self):
         
         
-        self.local_traing_process = multiprocessing.Process(target=self.fit, args=(w_glob,))
+        self.local_traing_process = multiprocessing.Process(target=self.fit, args=())
 
         self.clear_result_cache()
 
@@ -181,6 +211,21 @@ if __name__ == '__main__':
     else:
         exit('Error: unrecognized dataset')
 
+    db_postfix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
+                                        args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
+                                        args.grad_abs_noise_stdev,
+                                        args.grad_rltv_noise_stdev,
+                                        args.params_compress_rate,)
+    
+    if not os.path.exists(f"miscellaneous/database{db_postfix}"):
+            os.mkdir(f"miscellaneous/database{db_postfix}")
+
+    trainsets = [Subset(dataset_train, list(dict_users[idx]))
+                        for idx in range(len(dict_users))]
+    
+    with open(f"miscellaneous/database{db_postfix}/data.pkl", 'wb') as file:
+        pickle.dump(trainsets, file)
+
     # build model
     model_args = {'args': args}
     if args.model[0:3].lower() == 'vgg':
@@ -222,20 +267,20 @@ if __name__ == '__main__':
 
     iter = len(ms_acc_train_list)
     while iter < args.epochs:
-        net_glob.train()
         w_locals_selected, loss_locals_selected = [], []
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         print("Selected clients:", idxs_users)
-        w_glob = copy.deepcopy(net_glob.state_dict())
+        w_glob = net_glob.state_dict()
         w_glob = fl.AddNoiseAbs(w_glob)
         w_glob = fl.AddNoiseRltv(w_glob)
         w_glob = fl.CompressParams(w_glob)
+        torch.save(w_glob, f"miscellaneous/database{db_postfix}/w_glob.pkl")
 
         for idx in idxs_users:
             if args.verbose:
                 print(f"Training client {idx}")
-            clients[idx].spawn_new_local_training(w_glob)
+            clients[idx].spawn_new_local_training()
         
         for idx in idxs_users:
             clients[idx].local_traing_process.join()
@@ -248,8 +293,8 @@ if __name__ == '__main__':
             w = fl.AddNoiseAbs(w)
             w = fl.AddNoiseRltv(w)
             w = fl.CompressParams(w)
-            w_locals_selected.append(copy.deepcopy(w))
-            loss_locals_selected.append(copy.deepcopy(clients[idx].local_loss))
+            w_locals_selected.append(w)
+            loss_locals_selected.append(clients[idx].local_loss)
 
         # update global weights
         w_glob = fl.FedAvg(w_locals_selected)
