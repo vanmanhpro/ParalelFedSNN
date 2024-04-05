@@ -39,7 +39,6 @@ class LocalUpdate(object):
             optimizer = torch.optim.Adam(net.parameters(), lr = self.args.lr, weight_decay = self.args.weight_decay, amsgrad = True)
         else:
             print("Invalid optimizer")
-
         epoch_loss = []
         for iter in range(self.args.local_ep):
             batch_loss = []

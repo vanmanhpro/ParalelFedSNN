@@ -53,6 +53,7 @@ CIFAR*
 cifar*
 *results*
 test/
+miscellaneous/
 ddd20/*dataset*/*
 ddd20/data
 nmnist/data
