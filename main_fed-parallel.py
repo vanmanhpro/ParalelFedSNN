@@ -13,6 +13,7 @@ from torchvision import datasets, transforms
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
+import torch.nn.functional as F
 
 from utils.sampling import mnist_iid, mnist_noniid, cifar_iid, cifar_non_iid, mnist_dvs_iid, mnist_dvs_non_iid, nmnist_iid, nmnist_non_iid
 from utils.options import args_parser
@@ -41,11 +42,7 @@ from PIL import Image
 
 class CheckPoint():
     def __init__(self, args) -> None:
-        self.fn_suffix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
-                                            args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
-                                            args.grad_abs_noise_stdev,
-                                            args.grad_rltv_noise_stdev,
-                                            args.params_compress_rate,)
+        self.args = args
 
     def checkpoint(self, w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list):
         # Write metric store into a CSV
@@ -57,53 +54,49 @@ class CheckPoint():
                 'Test loss': ms_loss_test_list
             })
 
-        metrics_df.to_csv(f"./{args.result_dir}/fed_stats{self.fn_suffix}.csv", sep='\t')
+        metrics_df.to_csv(f"./{self.args.result_dir}/fed_stats{self.args.db_postfix}.csv", sep='\t')
 
-        torch.save(w_glob, f"./{args.result_dir}/saved_model{self.fn_suffix}")
+        torch.save(w_glob, f"./{self.args.result_dir}/saved_model{self.args.db_postfix}")
 
     def load_checkpoint_if_exists(self):
+        print(f"Checkpoint model: ./{self.args.result_dir}/saved_model{self.args.db_postfix}")
+        print(f"Checkpoint stats: ./{self.args.result_dir}/fed_stats{self.args.db_postfix}.csv")
         
-        if not os.path.exists(f"./{args.result_dir}/saved_model{self.fn_suffix}"):
+        if not os.path.exists(f"./{self.args.result_dir}/saved_model{self.args.db_postfix}"):
             return None, None, None, None, None
         
-        metrics_df = pd.read_csv(f"./{args.result_dir}/fed_stats{self.fn_suffix}.csv", sep='\t')
+        metrics_df = pd.read_csv(f"./{self.args.result_dir}/fed_stats{self.args.db_postfix}.csv", sep='\t')
 
         ms_acc_train_list = metrics_df['Train acc'].tolist()
         ms_acc_test_list = metrics_df['Test acc'].tolist()
         ms_loss_train_list = metrics_df['Train loss'].tolist()
         ms_loss_test_list = metrics_df['Test loss'].tolist()
 
-        w_glob = torch.load(f"./{args.result_dir}/saved_model{self.fn_suffix}")
+        w_glob = torch.load(f"./{self.args.result_dir}/saved_model{self.args.db_postfix}")
 
         return w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list
 
 
 class Client:
-    def __init__(self, args, net_class, model_args, node_id, dataset_train, train_idxs) -> None:
-        self.db_postfix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
-                                            args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
-                                            args.grad_abs_noise_stdev,
-                                            args.grad_rltv_noise_stdev,
-                                            args.params_compress_rate,)
+    def __init__(self, args, net_class, model_args, node_id) -> None:
         self.args = args
         self.node_id = node_id
         self.net_class = net_class
         self.model_args = model_args
-        self.dataset_train = dataset_train
-        self.train_idxs = train_idxs
-
+        if 'device' in self.model_args:
+            self.model_args['device'] = self.args.device
         
-        self.result_cache_path = f"miscellaneous/database{self.db_postfix}/local_result_{self.node_id}.pkl"
+        self.result_cache_path = f"miscellaneous/database{self.args.db_postfix}/local_result_{self.node_id}.pkl"
 
     
     def fit(self):
         while True:
             try:
-                with open(f"miscellaneous/database{self.db_postfix}/data.pkl", 'rb') as file:
-                    trainsets = pickle.load(file)
+                with open(f"miscellaneous/database{self.args.db_postfix}/data.pkl", 'rb') as file:
+                    trainsets, _ = pickle.load(file)
                 ldr_train = DataLoader(trainsets[self.node_id], batch_size=self.args.local_bs, shuffle=True, drop_last=True)
                 
-                w_glob = torch.load(f"miscellaneous/database{self.db_postfix}/w_glob.pkl")
+                w_glob = torch.load(f"miscellaneous/database{self.args.db_postfix}/w_glob_noised.pkl")
 
                 net = self.net_class(**self.model_args).to(self.args.device)
                 net.load_state_dict(w_glob)
@@ -136,9 +129,9 @@ class Client:
                 
 
                 with open(self.result_cache_path, 'wb') as file:
-                    pickle.dump((net.state_dict(), sum(epoch_loss) / len(epoch_loss)), file)
+                    pickle.dump((net.cpu().state_dict(), sum(epoch_loss) / len(epoch_loss)), file)
 
-                del net, loss_func, epoch_loss, w_glob
+                del net, loss_func, epoch_loss, w_glob, ldr_train
 
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
@@ -146,9 +139,13 @@ class Client:
                 return 
             except Exception as e:
                 print(f"Training failed {e}")
+                return
                 print(f"Sleeping for random seconds before retrying")
                 time.sleep(random.randrange(5, 14))
 
+
+    def clear_result(self):
+        del self.local_w, self.local_loss
 
     def clear_result_cache(self):
         if os.path.exists(self.result_cache_path):
@@ -162,7 +159,6 @@ class Client:
         self.clear_result_cache()
 
         self.local_traing_process.start()
-        self.local_training_in_progress = True
     
     def load_local_training_result_if_done(self):
         if not os.path.exists(self.result_cache_path) or self.local_traing_process.exitcode != 0:
@@ -177,12 +173,50 @@ class Client:
         return True
     
 
+def test(args, model_args):
+    if 'device' in model_args:
+        model_args['device'] = args.device
+
+    with open(f"miscellaneous/database{args.db_postfix}/data.pkl", 'rb') as file:
+        _, dataset_test = pickle.load(file)
+     
+    net_glob = args.net_class(**model_args).to(args.device)
+    w_glob = torch.load(f"miscellaneous/database{args.db_postfix}/w_glob.pkl")
+    net_glob.load_state_dict(w_glob)
+    net_glob.eval()
+    # testing
+    test_loss = 0
+    correct = 0
+    data_loader = DataLoader(dataset_test, batch_size=args.bs)
+    l = len(data_loader)
+    for idx, (data, target) in enumerate(data_loader):
+        if args.gpu != -1:
+            data, target = data.to(args.device), target.to(args.device)
+        log_probs = net_glob(data)
+        # sum up batch loss
+        test_loss += F.cross_entropy(log_probs, target, reduction='sum').item()
+        # get the index of the max log-probability
+        y_pred = log_probs.data.max(1, keepdim=True)[1]
+        correct += y_pred.eq(target.data.view_as(y_pred)).long().cpu().sum()
+
+    test_loss /= len(data_loader.dataset)
+    accuracy = 100.00 * correct / len(data_loader.dataset)
+    if args.verbose:
+        print('\nTest set: Average loss: {:.4f} \nAccuracy: {}/{} ({:.2f}%)\n'.format(
+            test_loss, correct, len(data_loader.dataset), accuracy))
+    
+    with open(f"miscellaneous/database{args.db_postfix}/test_result.pkl", 'wb') as file:
+        pickle.dump((accuracy.item(), test_loss), file)
+
 if __name__ == '__main__':
+    multiprocessing.set_start_method('forkserver')
+
     start_time = time.time()
     # parse args
     args = args_parser()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    args.cpu_device = torch.device('cpu')
     args.device = torch.device('cuda:{}'.format(int(args.gpu.split(',')[0])) if torch.cuda.is_available() and args.gpu != '-1' else 'cpu')
     print(args.device)
     if args.device != 'cpu':
@@ -212,36 +246,47 @@ if __name__ == '__main__':
     else:
         exit('Error: unrecognized dataset')
 
-    db_postfix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
+    args.db_postfix = '_{}_{}_snn{}_epoch{}-{}_C{}-{}_iid{}_absnoise{}_rltvnoise{}_cmprsrate{}'.format(
                                         args.dataset, args.model, args.snn, args.epochs, args.local_ep, args.num_users, args.frac, args.iid,
                                         args.grad_abs_noise_stdev,
                                         args.grad_rltv_noise_stdev,
                                         args.params_compress_rate,)
     
-    if not os.path.exists(f"miscellaneous/database{db_postfix}"):
-            os.mkdir(f"miscellaneous/database{db_postfix}")
+    cache_paths = [
+        f"miscellaneous/database{args.db_postfix}/test_result.pkl",
+        f"miscellaneous/database{args.db_postfix}/data.pkl",
+        f"miscellaneous/database{args.db_postfix}/w_glob_noised.pkl",
+        f"miscellaneous/database{args.db_postfix}/w_glob.pkl"
+    ]
+    for path in cache_paths:
+        if os.path.exists(path):
+            os.remove(path)
+
+
+    if not os.path.exists(f"miscellaneous/database{args.db_postfix}"):
+        os.mkdir(f"miscellaneous/database{args.db_postfix}")
 
     trainsets = [Subset(dataset_train, list(dict_users[idx]))
                         for idx in range(len(dict_users))]
     
-    with open(f"miscellaneous/database{db_postfix}/data.pkl", 'wb') as file:
-        pickle.dump(trainsets, file)
+    with open(f"miscellaneous/database{args.db_postfix}/data.pkl", 'wb') as file:
+        pickle.dump((trainsets, dataset_test), file)
 
     # build model
     model_args = {'args': args}
     if args.model[0:3].lower() == 'vgg':
         if args.snn:
-            model_args = {'num_cls': args.num_classes, 'timesteps': args.timesteps, 'device': args.device}
-            net_glob = snn_models_bntt.SNN_VGG9_BNTT(**model_args).to(args.device)
+            model_args = {'num_cls': args.num_classes, 'timesteps': args.timesteps, 'device': args.cpu_device}
+            net_glob = snn_models_bntt.SNN_VGG9_BNTT(**model_args).to(args.cpu_device)
         else:
             model_args = {'vgg_name': args.model, 'labels': args.num_classes, 'dataset': args.dataset, 'kernel_size': 3, 'dropout': args.dropout}
-            net_glob = ann_models.VGG(**model_args).to(args.device)
+            net_glob = ann_models.VGG(**model_args).to(args.cpu_device)
     elif args.model[0:6].lower() == 'resnet':
         if args.snn:
             pass
         else:
             model_args = {'num_cls': args.num_classes}
-            net_glob = resnet_models.Network(**model_args).to(args.device)
+            net_glob = resnet_models.Network(**model_args).to(args.cpu_device)
     else:
         exit('Error: unrecognized model')
     print(net_glob)
@@ -253,15 +298,17 @@ if __name__ == '__main__':
 
     if a1 is not None:
         print(f"Checkpoint exists! Epoch: {len(a2)}")
-        net_glob.load_state_dict(a1)
+        w_glob = a1
         ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list = a2, a3, a4, a5
     else:
+        w_glob = net_glob.state_dict()
         # metrics to store
         ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list = [], [], [], []
 
-    clients = [Client(args, type(net_glob), model_args, node_id, dataset_train, dict_users[node_id]) for node_id in range(args.num_users)]
+    args.net_class = type(net_glob)
+    clients = [Client(args, type(net_glob), model_args, node_id) for node_id in range(args.num_users)]
 
-    multiprocessing.set_start_method('forkserver')
+    del net_glob
 
     # Define Fed Learn object
     fl = FedLearn(args)
@@ -272,11 +319,10 @@ if __name__ == '__main__':
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         print("Selected clients:", idxs_users)
-        w_glob = net_glob.state_dict()
         w_glob = fl.AddNoiseAbs(w_glob)
         w_glob = fl.AddNoiseRltv(w_glob)
         w_glob = fl.CompressParams(w_glob)
-        torch.save(w_glob, f"miscellaneous/database{db_postfix}/w_glob.pkl")
+        torch.save(w_glob, f"miscellaneous/database{args.db_postfix}/w_glob_noised.pkl")
 
         for idx in idxs_users:
             if args.verbose:
@@ -294,26 +340,35 @@ if __name__ == '__main__':
             w = fl.AddNoiseAbs(w)
             w = fl.AddNoiseRltv(w)
             w = fl.CompressParams(w)
-            w_locals_selected.append(w)
+            w_locals_selected.append(copy.deepcopy(w))
             loss_locals_selected.append(clients[idx].local_loss)
 
+            del w
+            clients[idx].clear_result()
+
         # update global weights
+        del w_glob
         w_glob = fl.FedAvg(w_locals_selected)
+
         
-        # copy weight to net_glob
-        net_glob.load_state_dict(w_glob)
+
+        torch.save(w_glob, f"miscellaneous/database{args.db_postfix}/w_glob.pkl")
  
         # print loss
         print("Local loss:", loss_locals_selected)
         loss_avg = sum(loss_locals_selected) / len(loss_locals_selected)
         print('Round {:3d}, Average loss {:.3f}'.format(iter, loss_avg))
  
-        
-        net_glob.eval()
-        # acc_train, loss_train = test_img(net_glob, dataset_train, args)
-        # print("Round {:d}, Training accuracy: {:.2f}".format(iter, acc_train))
+
         acc_train, loss_train = 0.0, 0.0
-        acc_test, loss_test = test_img(net_glob, dataset_test, args)
+        
+        testing_process = multiprocessing.Process(target=test, args=(args, model_args,))
+        testing_process.start()
+        testing_process.join()
+        
+        with open(f"miscellaneous/database{args.db_postfix}/test_result.pkl", 'rb') as file:
+            acc_test, loss_test = pickle.load(file)
+
         print("Round {:d}, Testing accuracy: {:.2f}".format(iter, acc_test))
 
         # Add metrics to store
@@ -326,5 +381,10 @@ if __name__ == '__main__':
             cp.checkpoint(w_glob, ms_acc_train_list, ms_acc_test_list, ms_loss_train_list, ms_loss_test_list)
 
         iter += 1
+
+        for w in w_locals_selected:
+            del w
+
+        del w_locals_selected, loss_locals_selected
 
     print(f"Total training time: {(time.time() - start_time)/3600}")

@@ -48,14 +48,14 @@ class FedLearn(object):
     def AddNoiseAbs(self, w):
         if self.args.grad_abs_noise_stdev > 0:
             for k in w.keys():
-                w[k] = w[k].cpu() + torch.randn(w[k].size()) * self.args.grad_abs_noise_stdev
+                w[k] = w[k].cpu() + torch.randn(w[k].size()).cpu() * self.args.grad_abs_noise_stdev
         
         return w
     
     def AddNoiseRltv(self, w):
         if self.args.grad_rltv_noise_stdev > 0:
             for k in w.keys():
-                w[k] = w[k].cpu() + torch.randn(w[k].size()) * torch.mean(torch.abs(w[k])) * self.args.grad_rltv_noise_stdev
+                w[k] = w[k].cpu() + torch.randn(w[k].size()).cpu() * torch.mean(torch.abs(w[k])).cpu() * self.args.grad_rltv_noise_stdev
         
         return w
     
@@ -67,7 +67,7 @@ class FedLearn(object):
             else:
                 threshold = np.inf
             for k in w.keys():
-                w[k][torch.abs(w[k]) < threshold] = 0
+                w[k][torch.abs(w[k]).cpu() < threshold] = 0
 
         return w
     
