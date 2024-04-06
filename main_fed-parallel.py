@@ -138,6 +138,7 @@ class Client:
                 with open(self.result_cache_path, 'wb') as file:
                     pickle.dump((net.state_dict(), sum(epoch_loss) / len(epoch_loss)), file)
 
+                del net, loss_func, epoch_loss, w_glob
 
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
