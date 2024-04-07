@@ -55,8 +55,8 @@ class FedLearn(object):
     def AddNoiseRltv(self, w):
         if self.args.grad_rltv_noise_stdev > 0:
             for k in w.keys():
-                w[k] = w[k].cpu() + torch.randn(w[k].size()).cpu() * torch.mean(torch.abs(w[k])).cpu() * self.args.grad_rltv_noise_stdev
-        
+                if w[k].dim() != 0:
+                    w[k] = w[k].cpu() + torch.randn(w[k].size()).cpu() * torch.mean(torch.abs(w[k].cpu())) * self.args.grad_rltv_noise_stdev
         return w
     
     def CompressParams(self, w):
