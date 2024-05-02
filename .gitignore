@@ -53,6 +53,7 @@ CIFAR*
 cifar*
 *results*
 test/
+plots/
 miscellaneous/
 ddd20/*dataset*/*
 ddd20/data
@@ -60,3 +61,4 @@ nmnist/data
 *experiments*/
 *rog_script*
 run_command.sh
+code_test_*

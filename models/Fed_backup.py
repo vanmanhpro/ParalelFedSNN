@@ -60,51 +60,50 @@ class FedLearn(object):
                     w[k] = w[k].cpu() + torch.randn(w[k].size()).cpu() * torch.mean(torch.abs(w[k].cpu())) * self.args.grad_rltv_noise_stdev
         return w
     
-    def ApplyGrad(self, w_init, g):
-        w = OrderedDict()
-        for k in w_init.keys():
-            w[k] = w_init[k] + g[k]
+    def CompressParams(self, w):
+        if self.args.params_compress_rate < 1.0:
+            w_flat = np.concatenate([w[k].flatten().cpu() for k in w.keys()])
+            if self.args.params_compress_rate > 0:
+                threshold = np.quantile(np.abs(w_flat), 1 - self.args.params_compress_rate)
+            else:
+                threshold = np.inf
+            for k in w.keys():
+                w[k][torch.abs(w[k]).cpu() < threshold] = 0
+
         return w
     
-    def GetGrad(self, w_trained, w_init):
-        g = OrderedDict()
-        for k in w_trained.keys():
-            g[k] = w_trained[k] - w_init[k]
-        return g
+    def MapCompressGradients(self, w_init, w):
+        w_sel = OrderedDict()
+        for k in w.keys():
+            w_init[k] = w_init[k].cpu()
+            w[k] = w[k].cpu()
+            w_sel[k] = np.ones(w[k].size(), dtype=bool)
+        
+        w_init_flat = np.concatenate([w_init[k].flatten() for k in w.keys()])
+        w_flat = np.concatenate([w[k].flatten() for k in w.keys()])
+        w_grad = w_flat - w_init_flat
 
-    def MapComprGrad(self, g):
-        # print("Compression rate", self.args.cmp_rate)
-        g_sel = OrderedDict()
-        for k in g.keys():
-            g[k] = g[k].cpu()
-            g_sel[k] = torch.ones(g[k].size(), dtype=bool).cpu()
-            
-        g_flat = np.concatenate([g[k].flatten() for k in g.keys()])
-        if self.args.cmp_rate == 1.0:
-            return g_sel
-        elif self.args.cmp_rate > 0:
-            threshold = np.quantile(np.abs(g_flat), 1 - self.args.cmp_rate)
+        if self.args.params_compress_rate > 0:
+            threshold = np.quantile(np.abs(w_grad), 1 - self.args.params_compress_rate)
         else:
             threshold = np.inf
-        for k in g.keys():
-            g_sel[k][torch.abs(g[k]) < threshold] = False
 
-        return g_sel
+        for k in w.keys():
+            w_sel[k][torch.abs(w[k] - w_init[k]) < threshold] = False
+
+        return w_sel
     
-    def GradFedAvg(self, grads):
-        g_sum = OrderedDict()
-        g_count = OrderedDict()
-        g_avg = OrderedDict()
-        for k in grads[0][0].keys():
-            g_sum[k] = grads[0][0][k] * grads[0][1][k].float()
-            g_count[k] = grads[0][1][k].float()
-        for k in grads[0][0].keys():
-            for i in range(1, len(grads)):
-                g_sum[k] = g_sum[k] + grads[i][0][k] * grads[i][1][k].float()
-                g_count[k] = g_count[k] + grads[i][1][k].float()
-            g_count[k][g_count[k] == 0] = 1
-            g_avg[k] = torch.div(g_sum[k], g_count[k])
-        return g_avg
+    def Compress(self, w_init, w, w_sel):
+        if self.args.params_compress_rate < 1.0:
+            w_flat = np.concatenate([w[k].flatten().cpu() for k in w.keys()])
+            if self.args.params_compress_rate > 0:
+                threshold = np.quantile(np.abs(w_flat), 1 - self.args.params_compress_rate)
+            else:
+                threshold = np.inf
+            for k in w.keys():
+                w[k][torch.abs(w[k]).cpu() < threshold] = 0
+
+        return w
     
     def FedAvg(self, w):
         w_avg = copy.deepcopy(w[0])

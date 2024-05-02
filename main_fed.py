@@ -149,10 +149,10 @@ if __name__ == '__main__':
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
         print("Selected clients:", idxs_users)
-        w_glob = copy.deepcopy(net_glob.state_dict())
+        w_glob = copy.deepcopy(net_glob.cpu().state_dict())
         w_glob = fl.AddNoiseAbs(w_glob)
         w_glob = fl.AddNoiseRltv(w_glob)
-        w_glob = fl.CompressParams(w_glob)
+        w_sel = fl.CompressParams(w_glob)
 
         for idx in idxs_users:
             if args.verbose:
